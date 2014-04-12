@@ -1,0 +1,26 @@
+{
+   "name": "litre",
+   "version": "1.0.0",
+   "description": "Tool for storing and retrieving JSONs in redis."
+   "dependencies": {
+      "dale": "1.0.6",
+      "teishi": "1.0.6"
+   },
+   "main": "litre.js",
+   "author": "Federico Pereiro <fpereiro@gmail.com>",
+   "contributors": ["Federico Pereiro <fpereiro@gmail.com>"],
+   "license": [{
+      "type": "Public Domain",
+      "url": "http://github.com/fpereiro/litre#license"
+   }],
+   "keywords": ["html"],
+   "repository" : {
+      "type": "git",
+      "url": "http://github.com/fpereiro/litre.git"
+   },
+   "bugs": {
+      "url": "http://github.com/fpereiro/litre/issues",
+      "email": "fpereiro@gmail.com"
+   }
+}
+
