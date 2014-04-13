@@ -8,12 +8,19 @@ Please refer to README.md to see what this is about.
 
 (function () {
 
+   // *** SETUP ***
+
    var log = console.log;
 
    var dale = require ('dale');
    var teishi = require ('teishi');
 
+   var redisLibrary = require ('redis');
+   var redis = redisLibrary.createClient ();
+
    var litre = exports;
+
+   // *** VALIDATION ***
 
    // Object containing validations.
    litre.v = {};
@@ -69,58 +76,13 @@ Please refer to README.md to see what this is about.
       return litre.v.path (branch [0]) || litre.v.leaf (branch [0]);
    }
 
-   /*
-      litre.to takes a JSON and returns a litre tree.
+   // *** HELPER FUNCTIONS ***
 
-      The function takes two arguments: a JSON object, which is required, and a litre path, which is optional.
-
-      If you pass a litre path as the second argument, all the paths will start with the specified litre path. Example:
-      litre.to ({a: 'b'})        // returns [[['a'], 'b']]
-      litre.to ({a: 'b'}, ['c']) // returns [[['c', 'a'], 'b']]
-
-      If any of the two inputs is invalid, the function will return false.
-
-      If an empty array or object is passed, or the path passed does not match any of the branches contained in the converted JSON, an empty gotobi tree will be returned (which is represented by an empty array).
-
-      Arrays are transformed in two ways: a) the indexes are increased by one; and b) the indexes are transformed into a string. Example:
-      litre.to (['a', 'b', 'c']) // returns [[['1'], 'a'], [['2'], 'b'], [['3'], 'c']].
-   */
-
-   litre.to = function litre_to (JSON, path) {
-
-      if (JSON.s (JSON) === false) return false;
-      if (litre.v.path (path)) return false;
-
-      // If the path is undefined, we set it to an empty array.
-      if (path === undefined) {path = []}
-
-      var result = dale.do (JSON, function (v, k) {
-         // If k is a number, we're dealing with an array. We add 1 to the key and convert it into a string.
-         teishi.type (k) === 'number' ? k = k + 1 + '' : k = k;
-         if (teishi.type (v) !== 'array' && teishi.type (v) !== 'object') {
-            // If the value is not complex (ie: it doesn't contain other values inside), we convert the value to a string and return the branch.
-            return [path.concat ([k]), v + ''];
-         }
-         else {
-            // If the value is complex, we recursively call the function, concatenating the path to the current key.
-            return litre_to (v, path.concat ([k]));
-         }
-      });
-
-      if (result === []) return result;
-
-      // If the result is not empty, we now have to unwrap the nested results. This is something I still don't fully understand, hence I can't explain it clearly. Just know that without this, the tree is not flattened and you have arrays of branches instead of just branches inside it.
-
+   // litre.clean removes elements from an array that are either undefined or null. This function will be helpful when deleting elements from arrays.
+   litre.clean = function (tree) {
       var output = [];
-      dale.do (result, function (v) {
-         // If the first element of the path is a string, it's a branch, hence we push it.
-         if (teishi.type (v [0] [0]) === 'string') {
-            output.push (v);
-         }
-         else {
-         // We unwrap the nested returns from JSON_to_litre, in a single level. Since we do this each time we call the function, we don't need to do it deeply at the end. At every call of the function we return an array with the proper nestedness.
-            dale.do (v, function (v2) {output.push (v2)});
-         }
+      dale.do (tree, function (v) {
+         if (v !== undefined && v !== null) output.push (v);
       });
       return output;
    }
@@ -190,11 +152,6 @@ Please refer to README.md to see what this is about.
             }
          });
       });
-      var output = [];
-      dale.do (old.concat (New), function (v) {
-         if (v !== undefined && v !== null) output.push (v);
-      });
-      return output;
    }
 
    litre.remove = function (tree, path) {
@@ -212,6 +169,64 @@ Please refer to README.md to see what this is about.
       output = [];
       dale.do (tree, function (v) {
          if (v !== undefined && v !== null) output.push (v);
+      });
+      return output;
+   }
+
+   // *** litre from/to JSON ***
+
+   /*
+      litre.to takes a JSON and returns a litre tree.
+
+      The function takes two arguments: a JSON object, which is required, and a litre path, which is optional.
+
+      If you pass a litre path as the second argument, all the paths will start with the specified litre path. Example:
+      litre.to ({a: 'b'})        // returns [[['a'], 'b']]
+      litre.to ({a: 'b'}, ['c']) // returns [[['c', 'a'], 'b']]
+
+      If any of the two inputs is invalid, the function will return false.
+
+      If an empty array or object is passed, or the path passed does not match any of the branches contained in the converted JSON, an empty litre tree will be returned (which is represented by an empty array).
+
+      Arrays are transformed in two ways: a) the indexes are increased by one; and b) the indexes are transformed into a string. Example:
+      litre.to (['a', 'b', 'c']) // returns [[['1'], 'a'], [['2'], 'b'], [['3'], 'c']].
+   */
+
+   litre.to = function litre_to (JSON, path) {
+
+      if (JSON.s (JSON) === false) return false;
+      if (litre.v.path (path)) return false;
+
+      // If the path is undefined, we set it to an empty array.
+      if (path === undefined) {path = []}
+
+      var result = dale.do (JSON, function (v, k) {
+         // If k is a number, we're dealing with an array. We add 1 to the key and convert it into a string.
+         teishi.type (k) === 'number' ? k = k + 1 + '' : k = k;
+         if (teishi.type (v) !== 'array' && teishi.type (v) !== 'object') {
+            // If the value is not complex (ie: it doesn't contain other values inside), we convert the value to a string and return the branch.
+            return [path.concat ([k]), v + ''];
+         }
+         else {
+            // If the value is complex, we recursively call the function, concatenating the path to the current key.
+            return litre_to (v, path.concat ([k]));
+         }
+      });
+
+      if (result === []) return result;
+
+      // If the result is not empty, we now have to unwrap the nested results. This is something I still don't fully understand, hence I can't explain it clearly. Just know that without this, the tree is not flattened and you have arrays of branches instead of just branches inside it.
+
+      var output = [];
+      dale.do (result, function (v) {
+         // If the first element of the path is a string, it's a branch, hence we push it.
+         if (teishi.type (v [0] [0]) === 'string') {
+            output.push (v);
+         }
+         else {
+         // We unwrap the nested returns from JSON_to_litre, in a single level. Since we do this each time we call the function, we don't need to do it deeply at the end. At every call of the function we return an array with the proper nestedness.
+            dale.do (v, function (v2) {output.push (v2)});
+         }
       });
       return output;
    }
@@ -288,5 +303,10 @@ Please refer to README.md to see what this is about.
 
       return output;
    }
+
+   // *** litre from/to redis ***
+
+
+
 
 }).call (this);

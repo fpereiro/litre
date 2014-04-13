@@ -1,7 +1,7 @@
 {
    "name": "litre",
    "version": "1.0.0",
-   "description": "Tool for storing and retrieving JSONs in redis."
+   "description": "Tool for storing and retrieving JSONs in redis.",
    "dependencies": {
       "dale": "1.0.6",
       "teishi": "1.0.6"
