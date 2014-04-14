@@ -1,9 +1,11 @@
 {
    "name": "litre",
-   "version": "1.0.0",
+   "version": "0.1.0",
    "description": "Tool for storing and retrieving JSONs in redis.",
    "dependencies": {
       "dale": "1.0.6",
+      "hiredis": "0.1.16",
+      "redis": "0.10.1",
       "teishi": "1.0.6"
    },
    "main": "litre.js",
@@ -13,7 +15,7 @@
       "type": "Public Domain",
       "url": "http://github.com/fpereiro/litre#license"
    }],
-   "keywords": ["html"],
+   "keywords": ["redis"],
    "repository" : {
       "type": "git",
       "url": "http://github.com/fpereiro/litre.git"

@@ -1,5 +1,5 @@
 /*
-litre - v1.0.0
+litre - v0.1.0
 
 Written by Federico Pereiro (fpereiro@gmail.com) and released into the public domain.
 
@@ -27,17 +27,17 @@ Please refer to README.md to see what this is about.
 
    // Validate litre tree.
    litre.v.tree = function (tree) {
-      return teishi.stop ({
+      return (! teishi.stop ({
          compare: tree,
          to: 'array',
          test: teishi.test.type,
          label: 'litre tree'
-      });
+      }));
    }
 
    // Validate litre path, the first element of each branch, which is an array of strings.
    litre.v.path = function (path) {
-      return teishi.stop ([{
+      return (! teishi.stop ([{
          compare: path,
          to: 'array',
          test: teishi.test.type,
@@ -48,17 +48,17 @@ Please refer to README.md to see what this is about.
          multi: 'each',
          test: teishi.test.type,
          label: 'litre path step'
-      }]);
+      }]));
    }
 
    // Validate litre leaf, the second element of each branch, which is a string.
    litre.v.leaf = function (leaf) {
-      return teishi.stop ([{
+      return (! teishi.stop ([{
          compare: leaf,
          to: 'string',
          test: teishi.test.type,
          label: 'litre leaf',
-      }]);
+      }]));
    }
 
    // Validate litre branch.
@@ -72,14 +72,16 @@ Please refer to README.md to see what this is about.
          compare: branch.length,
          to: 2,
          label: 'litre branch length',
-      }])) return true;
-      return litre.v.path (branch [0]) || litre.v.leaf (branch [0]);
+      }])) return false;
+      return litre.v.path (branch [0]) && litre.v.leaf (branch [1]);
    }
 
    // *** HELPER FUNCTIONS ***
 
    // litre.clean removes elements from an array that are either undefined or null. This function will be helpful when deleting elements from arrays.
    litre.clean = function (tree) {
+      if (litre.v.tree (tree) === false) return false;
+
       var output = [];
       dale.do (tree, function (v) {
          if (v !== undefined && v !== null) output.push (v);
@@ -87,17 +89,41 @@ Please refer to README.md to see what this is about.
       return output;
    }
 
-   litre.mix = function (old, New, where) {
+   // XXX explain
+   litre.prepend = function (tree, path_to_prepend) {
+      if (litre.v.tree (tree) === false) return false;
+      if (dale.stop_on (tree, false, function (v) {
+         return litre.v.branch (v);
+      }) === false) return false;
+      if (litre.v.path (path_to_prepend) === false) return false;
+
+      var output = [];
+      dale.do (tree, function (v) {
+         v [0] = path_to_prepend.concat (v [0]);
+         output.push (v);
+      });
+      return output;
+   }
+
+   litre.get = function (tree, path) {
+      if (litre.v.tree (tree) === false) return false;
+      if (litre.v.path (path) === false) return false;
+
+      var output = [];
+      if (dale.stop_on (tree, false, function (v) {
+         if (v [0].length < tree.length) return;
+         if (litre.v.branch (v) === false) return false;
+         if (dale.stop_on (path, false, function (v2, k2) {
+            if (path [k2] !== v [0] [k2]) return false;
+            else return true;
+         }) === true) output.push (v);
+      }) === false) return false;
+      return output;
+   }
+
+   litre.mix = function (old, New) {
       // validate old as litre collection
       // validate new as litre collection
-      // validate where as path
-
-      if (where) {
-         New = dale.do (New, function (v) {
-            v [0] = where.concat (v [0]);
-            return v;
-         });
-      }
 
       var consistency_check = [];
       var inconsistent_element;
@@ -194,11 +220,11 @@ Please refer to README.md to see what this is about.
 
    litre.to = function litre_to (JSON, path) {
 
-      if (JSON.s (JSON) === false) return false;
-      if (litre.v.path (path)) return false;
-
       // If the path is undefined, we set it to an empty array.
       if (path === undefined) {path = []}
+
+      if (teishi.s (JSON) === false) return false;
+      if (litre.v.path (path)) return false;
 
       var result = dale.do (JSON, function (v, k) {
          // If k is a number, we're dealing with an array. We add 1 to the key and convert it into a string.
@@ -304,9 +330,38 @@ Please refer to README.md to see what this is about.
       return output;
    }
 
-   // *** litre from/to redis ***
+   // *** litre in/out redis ***
 
+   litre.sPath = function (path) {
+      if (litre.v.path (path) === false) return false;
+      return teishi.s (path).slice (0, teishi.s (path).length - 1);
+   }
 
+   litre.pPath = function (string) {
+      if (teishi.type (string) !== 'string') return false;
+      return teishi.p (string + ']');
+   }
 
+   litre.escape = function (string) {
+      if (teishi.type (string) !== 'string') return false;
+      return string
+         .replace ('\\', '\\\\')
+         .replace ('[', '\\[')
+         .replace (']', '\\]')
+         .replace ('?', '\\?')
+         .replace ('*', '\\*');
+   }
+
+   litre.out = function (path) {
+      redis.keys (litre.escape (litre.sPath (path)) + '*', function (error, replies) {
+         var output = [];
+         dale.do (replies, function (v) {
+            redis.get (v, function (error, replies) {
+               output.push ([litre.pPath (v), replies])
+               log (output);
+            });
+         });
+      });
+   }
 
 }).call (this);
