@@ -14,9 +14,10 @@ Please refer to README.md to see what this is about.
 
    var dale = require ('dale');
    var teishi = require ('teishi');
+   var a = require ('astack');
 
    var redisLibrary = require ('redis');
-   var redis = redisLibrary.createClient ();
+   var redisClient = redisLibrary.createClient ();
 
    var litre = exports;
 
@@ -352,16 +353,46 @@ Please refer to README.md to see what this is about.
          .replace ('*', '\\*');
    }
 
-   litre.out = function (path) {
-      redis.keys (litre.escape (litre.sPath (path)) + '*', function (error, replies) {
-         var output = [];
-         dale.do (replies, function (v) {
-            redis.get (v, function (error, replies) {
-               output.push ([litre.pPath (v), replies])
-               log (output);
-            });
-         });
+   litre.redis = function (aStack, action, path) {
+
+      if (teishi.stop ({
+         compare: action,
+         to: ['keys', 'get', 'set'],
+         multi: 'one_of',
+         label: 'Action passed to litre.redis'
+      })) return false;
+
+      path = litre.sPath (path);
+      if (path === false) return false;
+
+      if (action === 'keys') path = litre.escape (path) + '*';
+
+      redisClient [action] (path, function (error, replies) {
+         if (error) {
+            log (error);
+            a.aReturn (aStack, []);
+         }
+         else {
+            if (action === 'get') {
+               replies = [litre.pPath (path), replies];
+            }
+            a.aReturn (aStack, replies);
+         }
       });
+   }
+
+   litre.out = function (aStack, path) {
+      a.aCall (aStack, [
+         [litre.redis, 'keys', path],
+         [function (aStack) {
+            a.aFork (aStack, dale.do (aStack.last, function (v) {
+               return [litre.redis, 'get', litre.pPath (v)];
+            }));
+         }],
+      ]);
+   }
+
+   litre.in = function (aStack, tree) {
    }
 
 }).call (this);
