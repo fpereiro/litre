@@ -122,6 +122,19 @@ Please refer to README.md to see what this is about.
       return output;
    }
 
+   /*
+      Inconsistency of a leaf with respect to a tree
+
+      Leaf has path steps p1, p2, p3... pm
+
+      Check every leaf:
+
+      If it has length 1, check that does match p1
+      If it has length 2, check that does match p1, p2
+      If it has length > m, check that matches p1... pm
+
+   */
+
    litre.mix = function (old, New) {
       // validate old as litre collection
       // validate new as litre collection
@@ -353,46 +366,132 @@ Please refer to README.md to see what this is about.
          .replace ('*', '\\*');
    }
 
-   litre.redis = function (aStack, action, path) {
+   litre.redis = function (aStack, action) {
+
+      // Taken from http://redis.io/commands
+      var redis_commands = ['APPEND', 'AUTH', 'BGREWRITEAOF', 'BGSAVE', 'BITCOUNT', 'BITOP', 'BITPOS', 'BLPOP', 'BRPOP', 'BRPOPLPUSH', 'CLIENT KILL', 'CLIENT LIST', 'CLIENT GETNAME', 'CLIENT PAUSE', 'CLIENT SETNAME', 'CONFIG GET', 'CONFIG REWRITE', 'CONFIG SET', 'CONFIG RESETSTAT', 'DBSIZE', 'DEBUG OBJECT', 'DEBUG SEGFAULT', 'DECR', 'DECRBY', 'DEL', 'DISCARD', 'DUMP', 'ECHO', 'EVAL', 'EVALSHA sha1', 'EXEC', 'EXISTS', 'EXPIRE', 'EXPIREAT', 'FLUSHALL', 'FLUSHDB', 'GET', 'GETBIT', 'GETRANGE', 'GETSET', 'HDEL', 'HEXISTS', 'HGET', 'HGETALL', 'HINCRBY', 'HINCRBYFLOAT', 'HKEYS', 'HLEN', 'HMGET', 'HMSET', 'HSET', 'HSETNX', 'HVALS', 'INCR', 'INCRBY', 'INCRBYFLOAT', 'INFO', 'KEYS', 'LASTSAVE', 'LINDEX', 'LINSERT', 'LLEN', 'LPOP', 'LPUSH', 'LPUSHX', 'LRANGE', 'LREM', 'LSET', 'LTRIM', 'MGET', 'MIGRATE', 'MONITOR', 'MOVE', 'MSET', 'MSETNX', 'MULTI', 'OBJECT', 'PERSIST', 'PEXPIRE', 'PEXPIREAT', 'PFADD', 'PFCOUNT', 'PFMERGE', 'PING', 'PSETEX', 'PSUBSCRIBE', 'PUBSUB', 'PTTL', 'PUBLISH', 'PUNSUBSCRIBE', 'QUIT', 'RANDOMKEY', 'RENAME', 'RENAMENX', 'RESTORE', 'RPOP', 'RPOPLPUSH', 'RPUSH', 'RPUSHX', 'SADD', 'SAVE', 'SCARD', 'SCRIPT', 'SCRIPT FLUSH', 'SCRIPT KILL', 'SCRIPT', 'SDIFF', 'SDIFFSTORE', 'SELECT', 'SET', 'SETBIT', 'SETEX', 'SETNX', 'SETRANGE', 'SHUTDOWN SAVE', 'SHUTDOWN NOSAVE', 'SINTER', 'SINTERSTORE', 'SISMEMBER', 'SLAVEOF', 'SLOWLOG', 'SMEMBERS', 'SMOVE', 'SORT', 'SPOP', 'SRANDMEMBER', 'SREM', 'STRLEN', 'SUBSCRIBE', 'SUNION', 'SUNIONSTORE', 'SYNC', 'TIME', 'TTL', 'TYPE', 'UNSUBSCRIBE', 'UNWATCH', 'WATCH', 'ZADD', 'ZCARD', 'ZCOUNT', 'ZINCRBY', 'ZINTERSTORE', 'ZRANGE', 'ZRANGEBYLEX', 'ZRANGEBYSCORE', 'ZRANK', 'ZREM', 'ZREMRANGEBYRANK', 'ZREMRANGEBYSCORE', 'ZREVRANGE', 'ZREVRANGEBYSCORE', 'ZREVRANK', 'ZSCORE', 'ZUNIONSTORE', 'SCAN', 'SSCAN', 'HSCAN', 'ZSCAN'];
 
       if (teishi.stop ({
          compare: action,
-         to: ['keys', 'get', 'set'],
+         to: redis_commands,
          multi: 'one_of',
          label: 'Action passed to litre.redis'
       })) return false;
 
-      path = litre.sPath (path);
-      if (path === false) return false;
+      action = action.toLowerCase ();
 
-      if (action === 'keys') path = litre.escape (path) + '*';
+      var Arguments = dale.do (arguments, function (v) {return v});
+      Arguments = Arguments.slice (2, Arguments.length);
 
-      redisClient [action] (path, function (error, replies) {
+      redisClient [action] (Arguments, function (error, replies) {
          if (error) {
             log (error);
             a.aReturn (aStack, []);
          }
-         else {
-            if (action === 'get') {
-               replies = [litre.pPath (path), replies];
-            }
-            a.aReturn (aStack, replies);
-         }
+         else a.aReturn (aStack, replies !== null ? replies : []);
       });
    }
 
-   litre.out = function (aStack, path) {
+   litre.log = function (aStack) {
+      log (aStack.last);
+      a.aReturn (aStack, aStack.last);
+   }
+
+   litre.find = function (aStack, path) {
       a.aCall (aStack, [
-         [litre.redis, 'keys', path],
+         [litre.redis, 'KEYS', litre.escape (litre.sPath (path)) + '*'],
+      ])
+   }
+
+   /*
+      XXX explain this clearly
+      Conflicts are with respect to a new path that has to be inserted.
+
+      The problem is to have a path that is both a terminal and a nonterminal. This should never happen.
+
+      If we're inserting a path that is [s1, s2, ... sm], where m is path length, we must remove all elements that:
+      1) Have s1...sn as their FULL path, where n is less or equal than m
+      2) Have s1...sm plus further steps as their path
+
+   */
+
+   litre.find_conflicts = function (aStack, path) {
+
+      a.aCall (aStack, [
+         // Find 1)
+         [a.aFork, dale.do (path, function (v, k) {
+            return [litre.redis, 'ZRANK', 'INDEX', litre.sPath (path.slice (0, k + 1))];
+         })],
          [function (aStack) {
-            a.aFork (aStack, dale.do (aStack.last, function (v) {
-               return [litre.redis, 'get', litre.pPath (v)];
-            }));
+            var output = [];
+            dale.do (aStack.last, function (v, k) {
+               if (teishi.type (v) === 'number') output.push (path.slice (0, k + 1));
+            });
+            a.aReturn (aStack, output);
+         }],
+         // Find 2)
+         [function (aStack) {
+            var output = aStack.last;
+            a.aCall (aStack, [
+               [litre.find, path],
+               [function (aStack) {
+                  dale.do (output, function (v, k) {
+                     output [k] = litre.sPath (output [k]);
+                  });
+                  a.aReturn (aStack, output.concat (aStack.last));
+               }]
+            ]);
          }],
       ]);
    }
 
-   litre.in = function (aStack, tree) {
+   litre.in = function (aStack, path, value) {
+      if (litre.v.path (path) === false) return false;
+      if (teishi.type (value) !== 'string') return false;
+
+      // XXX This should be a script so that it behaves as a transaction.
+
+      a.aCall (aStack, [
+         [litre.find_conflicts, path],
+         [function (aStack) {
+            var actions = [];
+            dale.do (aStack.last, function (v) {
+               actions.push ([litre.redis, 'DEL', v]);
+               actions.push ([litre.redis, 'ZREM', 'INDEX', v]);
+            });
+            a.aFork (aStack, actions);
+         }],
+         [litre.redis, 'SET', litre.sPath (path), value],
+         [litre.redis, 'ZADD', 'INDEX', 0, litre.sPath (path)],
+      ]);
    }
+
+   litre.out = function (aStack, path) {
+      a.aCall (aStack, [
+         [litre.find, path],
+         [function (aStack) {
+            aStack.paths = aStack.last;
+            a.aFork (aStack, dale.do (aStack.last, function (v) {
+               return [litre.redis, 'GET', v];
+            }));
+         }],
+         [function (aStack) {
+            var paths = aStack.paths;
+            delete aStack.paths;
+            a.aReturn (aStack, dale.do (aStack.last, function (v, k) {
+               return [litre.pPath (paths [k]), v]
+            }));
+         }]
+      ]);
+   }
+
+   a.aCall (undefined, [
+      [litre.redis, 'FLUSHALL'],
+      [litre.in, ['data'], 'v'],
+      [litre.in, ['data', 'cars', '2'], 'v2'],
+      [litre.in, ['data', 'cars', '3'], 'v3'],
+      [litre.out, ['data', 'c']],
+      [litre.log],
+   ]);
 
 }).call (this);
