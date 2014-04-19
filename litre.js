@@ -90,17 +90,32 @@ Please refer to README.md to see what this is about.
       return output;
    }
 
-   // XXX explain
-   litre.prepend = function (tree, path_to_prepend) {
+   /*
+      litre.prepend takes a tree and a path. It then goes through every branch, and prepends the path to each branch path.
+
+      For example:
+
+      litre.prepend ([
+         [['a'], 'b'],
+         [['c', 'd'], 'e']
+      ], ['pre'])
+
+      returns [
+         [['pre', 'a'], 'b'],
+         [['pre', 'c', 'd'], 'e']
+      ]
+   */
+
+   litre.prepend = function (tree, path) {
       if (litre.v.tree (tree) === false) return false;
       if (dale.stop_on (tree, false, function (v) {
          return litre.v.branch (v);
       }) === false) return false;
-      if (litre.v.path (path_to_prepend) === false) return false;
+      if (litre.v.path (path) === false) return false;
 
       var output = [];
       dale.do (tree, function (v) {
-         v [0] = path_to_prepend.concat (v [0]);
+         v [0] = path.concat (v [0]);
          output.push (v);
       });
       return output;
@@ -123,11 +138,11 @@ Please refer to README.md to see what this is about.
    }
 
    /*
-      Inconsistency of a leaf with respect to a tree
+      Inconsistency of a tree with respect to a branch
 
-      Leaf has path steps p1, p2, p3... pm
+      Branch has path steps p1, p2, p3... pm
 
-      Check every leaf:
+      Check every branch in the tree:
 
       If it has length 1, check that does match p1
       If it has length 2, check that does match p1, p2
@@ -135,82 +150,40 @@ Please refer to README.md to see what this is about.
 
    */
 
-   litre.mix = function (old, New) {
-      // validate old as litre collection
-      // validate new as litre collection
+   litre.consistency_branch = function (branch, tree) {
 
-      var consistency_check = [];
-      var inconsistent_element;
+      if (litre.v.branch (branch) === false) return false;
+      if (litre.v.branch (tree) === false) return false;
 
-      dale.stop_on (New, false, function (v, k) {
-         if (dale.stop_on (v [0], false, function (v2, k2) {
-         // v2 and k2 are the elements of each selector on new
-            if (v [0].length !== k2 + 1) {
-               if (dale.stop_on (consistency_check, false, function (v3, k3) {
-               // v3 and k3 are the elements that already passed the consistency check.
-                  // We stringify to be able to compare arrays.
-                  if (JSON.s (v3 [0]) === JSON.s (v [0].slice (0, k2 + 1))) return false;
-               }) === false) return false;
-            }
-            else {
-               if (dale.stop_on (consistency_check, false, function (v3, k3) {
-                  if (v3 [0].length >= v [0].length) {
-                     // We stringify to be able to compare arrays.
-                     if (JSON.s (v [0]) === JSON.s (v3 [0].slice (0, v [0].length))) return false;
-                  }
-               }) === false) return false;
-            }
-         }) === false) {
-            inconsistent_element = v;
+      if (tree.length === 0) return true;
+      return dale.stop_on (tree, false, function (v) {
+         var left;
+         var right;
+         if (v [0].length > branch [0].length) {
+            left = v [0].slice (0, branch [0].length);
+            right = branch [0].length;
+         }
+         else {
+            left = v [0];
+            right = branch [0].slice (0, v [0].length);
+         }
+         if (teishi.s (left) === teishi.s (right)) {
+            log ('Inconsistent branch!', branch [0], 'clashes with', v [0]);
             return false;
          }
-         else consistency_check.push (v);
-      });
-      if (inconsistent_element !== undefined) {
-         log ('Inconsistent New argument passed to "litre.mix". Offending argument is', inconsistent_element);
-         return false;
-      }
-
-      dale.do (New, function (v, k) {
-      // v and k are the elements of New
-         dale.do (v [0], function (v2, k2) {
-         // v2 and k2 are the elements of each selector on new
-            if (v [0].length !== k2 + 1) {
-               dale.do (old, function (v3, k3) {
-               // v3 and k3 are each of the old elements
-                  // We stringify to be able to compare arrays.
-                  if (JSON.s (v3 [0]) === JSON.s (v [0].slice (0, k2 + 1))) delete old [k3];
-               });
-            }
-            else {
-               dale.do (old, function (v3, k3) {
-                  if (v3 [0].length >= v [0].length) {
-                     // We stringify to be able to compare arrays.
-                     if (JSON.s (v [0]) === JSON.s (v3 [0].slice (0, v [0].length))) delete old [k3];
-                  }
-               });
-            }
-         });
+         else return true;
       });
    }
 
-   litre.remove = function (tree, path) {
-      if (litre.v.tree (tree)) return false;
-      if (litre.v.path (path)) return false;
-
-      dale.do (tree, function (v, k) {
-         var result = dale.stop_on (path, false, function (v2, k2) {
-            if (v2 === v [0] [k2]) return true;
-            else return false;
-         });
-         if (result) delete tree [k];
+   litre.consistency_tree = function (tree) {
+      var consistent_branches = [];
+      return dale.stop_on (tree, false, function (v) {
+         if (litre.consistency_tree (v, consistent_branches)) {
+            consistent_branches.push (v);
+            return true;
+         }
+         else return false;
       });
-
-      output = [];
-      dale.do (tree, function (v) {
-         if (v !== undefined && v !== null) output.push (v);
-      });
-      return output;
    }
 
    // *** litre from/to JSON ***
@@ -235,7 +208,7 @@ Please refer to README.md to see what this is about.
    litre.to = function litre_to (JSON, path) {
 
       // If the path is undefined, we set it to an empty array.
-      if (path === undefined) {path = []}
+      if (path === undefined) path = [];
 
       if (teishi.s (JSON) === false) return false;
       if (litre.v.path (path)) return false;
@@ -271,77 +244,90 @@ Please refer to README.md to see what this is about.
       return output;
    }
 
-   litre.from = function (tree, path) {
-      if (path === undefined) path = [];
-      if (litre.v.tree (tree)) return false;
-      if (litre.v.path (path)) return false;
+   litre.combine = function (first, second) {
+      if (teishi.stop ([{
+         compare: arguments,
+         to: ['array', 'object'],
+         test: teishi.test.type,
+         multi: 'each_of',
+         label: 'Argument passed to litre.combine'
+      }, {
+         compare: teishi.type (second),
+         to: teishi.type (first),
+         label: 'Type of arguments'
+      }])) return false;
 
-      var matches = [];
+      if (dale.stop_on (second, false, function (v, k) {
 
-      if (path === []) {
-      // We want it all!
-         matches = tree;
-      }
-
-      else {
-         dale.do (tree, function (v) {
-            if (litre.v.path (v [0])) return false;
-            // If length of current path is less than of received path, then it can't be what we're looking for.
-            if (path.length > v [0].length) return false;
-
-            var result = dale.stop_on (path, false, function (v2, k2) {
-               // Each element in path must match the equivalent in current path.
-               if (v2 !== v [0] [k2]) {
-                  return false;
-               }
-               else {
-                  return true;
-               }
-            });
-            // We remove the elements that match the path. Notice that if it exactly matches the path (because we're getting a terminal value), the selector will now be an empty array.
-            v [0].splice (0, path.length);
-            if (result !== false) {
-               matches.push (v);
-            }
-         });
-      }
-
-      // We return an empty object because there were no matches.
-      if (matches.length === 0) return {};
-
-      var output = {};
-
-      dale.do (matches, function (v) {
-         if (v [0].length === 0) {
-            output = v [1];
+         if (teishi.type (v) !== 'array' && teishi.type (v) !== 'object') {
+            // We don't override null or undefined values.
+            if (v === null || v === undefined) return true;
+            first [k] = v;
          }
-         // XXX We are using eval
-         // We make v [1] into a string.
-         v [1] = v [1] + '';
-         value = '"' + v [1].replace (/"/g, '\\"').replace (/\n/g, '\\n') + '"';
-         var eval_string = 'output';
-         // The below doesn't get run if the selector is [].
-         dale.do (v [0], function (v2, k2) {
-            eval_string += ' ["' + v2 + '"]';
-            if (k2 + 1 !== v [0].length) {
-               if (eval (eval_string) === undefined) {
-                  eval (eval_string + ' = {};');
-               }
+         else {
+            if (teishi.type (first [k]) !== 'array' && teishi.type (first [k]) !== 'object') {
+               // If first [k] is a simple value, we override it.
+               first [k] = v;
             }
             else {
-               eval (eval_string + ' = ' + value + ';');
+               // If it's a complex value, we combine it recursively!
+               var recursive_result = litre.combine (first [k], v);
+               if (recursive_result === false) return false;
+               first [k] = recursive_result;
+            }
+         }
+      }) === false) return false;
+      else return first;
+   }
+
+   litre.from = function (tree) {
+
+      var output;
+
+      if (dale.stop_on (tree, false, function (v, k) {
+
+         var branch_output;
+
+         // Since a branch can't be inconsistent with itself, we use dale.do instad of dale.stop_on.
+         dale.do (v [0], function (v2, k2) {
+
+            // We reverse the loop.
+            k2 = (v [0].length - 1 - k2);
+            v2 = v [0] [k2];
+
+            // If the step is a number, we convert it into a number and zeroindex it.
+            if (isNaN (v2) === false) v2 = parseInt (v2) - 1;
+
+            if (k2 === v [0].length - 1) {
+               // We are at the last step of the path.
+               if (isNaN (v2)) {
+                  branch_output = {};
+               }
+               else {
+                  branch_output = [];
+               }
+               branch_output [v2] = v [1];
+            }
+            else {
+               if (isNaN (v2)) {
+                  branch_output = {v2: branch_output}
+               }
+               else {
+                  var temp = [];
+                  temp [v2] = branch_output;
+                  branch_output = temp;
+               }
             }
          });
-      });
 
-      // XXX this should work eventually
-      /*
-      dale.do (matches, function (v, k) {
-         output = litre.set (v [0], output, v [1]);
-      });
-      */
+         if (k === 0) output = branch_output;
 
-      return output;
+         else {
+            if (litre.combine (output, branch_output) === false) return false;
+            else output = litre.combine (output, branch_output);
+         }
+      }) === false) return false;
+      else return output;
    }
 
    // *** litre in/out redis ***
@@ -490,7 +476,7 @@ Please refer to README.md to see what this is about.
       [litre.in, ['data'], 'v'],
       [litre.in, ['data', 'cars', '2'], 'v2'],
       [litre.in, ['data', 'cars', '3'], 'v3'],
-      [litre.out, ['data', 'c']],
+      [litre.out, ['data', 'cars']],
       [litre.log],
    ]);
 
