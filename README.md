@@ -24,21 +24,29 @@ so you have to, too
 Each branch holds a terminal value. See the following three examples:
 
 ```
-{a: 'b'}```
-turns into:
+{a: 'b'}
 ```
-[[['a'], 'b']]```
+
+turns into:
+
+```
+[[['a'], 'b']]
+```
 
 ----
 
 ```
-['a', 'b']```
+['a', 'b']
+```
+
 turns into:
+
 ```
 [
   [['1'], 'a'],
   [['2'], 'b']
-]```
+]
+```
 
 ----
 
@@ -46,13 +54,18 @@ turns into:
 {
    a: 'b',
    c: ['d', 'e']
-}```
+}
+```
+
 turns into:
-```[
+
+```
+[
    [['a'], 'b'],
    [['c', '1'], 'd'],
    [['c', '2'], 'e']
-]```
+]
+```
 
 ## functions
 
@@ -161,7 +174,7 @@ this should be done as an entire transaction.
 
 ## Source code
 
-The complete source code is contained in `litre.js`. It is about 720 lines long.
+The complete source code is contained in `litre.js`. It is about 720 lines long. 720! This better be very useful.
 
 ## License
 
