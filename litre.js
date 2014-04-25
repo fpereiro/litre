@@ -1,5 +1,5 @@
 /*
-litre - v0.1.0
+litre - v0.2.0
 
 Written by Federico Pereiro (fpereiro@gmail.com) and released into the public domain.
 
@@ -10,14 +10,23 @@ Please refer to README.md to see what this is about.
 
    // *** SETUP ***
 
+   // Useful shorthand.
    var log = console.log;
 
-   var dale = require ('dale');
-   var teishi = require ('teishi');
-   var a = require ('astack');
-
+   // Require redis.
    var redisLibrary = require ('redis');
    var redisClient = redisLibrary.createClient ();
+
+   redisClient
+      .on ('ready', function () {
+         log ('litre successfully connected to redis at', redisClient.host + ':' + redisClient.port + '!')})
+      .on ('error', function (error) {
+         log ('redis error:', error)});
+
+   // Require astack, dale and teishi.
+   var a = require ('astack');
+   var dale = require ('dale');
+   var teishi = require ('teishi');
 
    var litre = exports;
 
@@ -38,18 +47,42 @@ Please refer to README.md to see what this is about.
 
    // Validate litre path, the first element of each branch, which is an array of strings.
    litre.v.path = function (path) {
-      return (! teishi.stop ([{
+      if (teishi.stop ([{
          compare: path,
          to: 'array',
          test: teishi.test.type,
          label: 'litre path',
+      }, {
+         // This is hackish, but I don't want to write teishi.test.greater
+         compare: path.length < 1,
+         to: false,
+         label: 'Path length cannot be empty!'
       }, {
          compare: path,
          to: 'string',
          multi: 'each',
          test: teishi.test.type,
          label: 'litre path step'
-      }]));
+      }])) return false;
+      return dale.stop_on (path, false, function (v) {
+         if (v.length === 0) return false;
+         else return true;
+      });
+   }
+
+   // Validate litre paths.
+   litre.v.paths = function (paths) {
+      return (! teishi.stop ({
+         compare: paths,
+         to: 'array',
+         test: teishi.test.type,
+         label: 'litre paths object'
+      }));
+   }
+
+   litre.v.epath = function (epath) {
+      if (teishi.type (epath) === 'array' && epath.length === 0) return true;
+      else return litre.v.path (epath);
    }
 
    // Validate litre leaf, the second element of each branch, which is a string.
@@ -80,11 +113,11 @@ Please refer to README.md to see what this is about.
    // *** HELPER FUNCTIONS ***
 
    // litre.clean removes elements from an array that are either undefined or null. This function will be helpful when deleting elements from arrays.
-   litre.clean = function (tree) {
-      if (litre.v.tree (tree) === false) return false;
+   litre.clean = function (array) {
+      if (teishi.type (array) !== 'array') return false;
 
       var output = [];
-      dale.do (tree, function (v) {
+      dale.do (array, function (v) {
          if (v !== undefined && v !== null) output.push (v);
       });
       return output;
@@ -121,13 +154,39 @@ Please refer to README.md to see what this is about.
       return output;
    }
 
-   litre.get = function (tree, path) {
+   litre.isInteger = function (string) {
+      return ! isNaN (parseInt (string) % 1);
+   }
+
+   // takes a path of strings and numbers. since always output will be used as path, we validate as little as possible.
+   litre.toPath = function (array) {
+      if (teishi.stop ({
+         compare: array,
+         to: 'array',
+         test: teishi.test.type,
+         label: 'Array passed to litre.toPath'
+      })) return false;
+      return dale.do (array, function (v) {
+         if (teishi.type (v) === 'number') return v + 1 + '';
+         else return v;
+      });
+   }
+
+   litre.fromPath = function (path) {
+      if (litre.v.path (path) === false) return false;
+      return dale.do (path, function (v) {
+         if (litre.isInteger (v)) return parseInt (v) - 1;
+         else return v;
+      });
+   }
+
+   litre.pick = function (tree, path) {
       if (litre.v.tree (tree) === false) return false;
       if (litre.v.path (path) === false) return false;
 
       var output = [];
       if (dale.stop_on (tree, false, function (v) {
-         if (v [0].length < tree.length) return;
+         if (v [0].length < path.length) return;
          if (litre.v.branch (v) === false) return false;
          if (dale.stop_on (path, false, function (v2, k2) {
             if (path [k2] !== v [0] [k2]) return false;
@@ -136,6 +195,36 @@ Please refer to README.md to see what this is about.
       }) === false) return false;
       return output;
    }
+
+   // Receives a javascript array or object and a litre path.
+   // Returns the value indicated by the selector.
+   /* Example:
+      var a = [1, 2, {b: 'c'}];
+      litre.pickJSON (a, [2, 'b']) -> returns 'c'
+   */
+   litre.pickJSON = function (object, path) {
+      if (litre.v.path (path) === false) return false;
+      if (teishi.stop ({
+         compare: object,
+         to: ['object', 'array'],
+         multi: 'one_of',
+         test: teishi.test.type,
+         label: 'object passed to litre.pickJSON'
+      })) return false;
+
+      if (path.length === 1) {
+         return object [path [0]];
+      }
+      else {
+         var step = path.shift ();
+         // Undefined can only be a terminal value, but since we have more than one step left in the path, what we're looking for in the object doesn't exist.
+         if (object [step] === undefined) {
+            return teishi.e (['step', step, 'not found in object', object]);
+         }
+         return litre.pickJSON (object [step], path);
+      }
+   }
+
 
    /*
       Inconsistency of a tree with respect to a branch
@@ -150,7 +239,7 @@ Please refer to README.md to see what this is about.
 
    */
 
-   litre.consistency_branch = function (branch, tree) {
+   litre.branch_consistent_in_tree = function (tree, branch) {
 
       if (litre.v.branch (branch) === false) return false;
       if (litre.v.branch (tree) === false) return false;
@@ -175,10 +264,10 @@ Please refer to README.md to see what this is about.
       });
    }
 
-   litre.consistency_tree = function (tree) {
+   litre.consistent_tree = function (tree) {
       var consistent_branches = [];
       return dale.stop_on (tree, false, function (v) {
-         if (litre.consistency_tree (v, consistent_branches)) {
+         if (litre.branch_consistent_in_tree (v, consistent_branches)) {
             consistent_branches.push (v);
             return true;
          }
@@ -189,29 +278,39 @@ Please refer to README.md to see what this is about.
    // *** litre from/to JSON ***
 
    /*
-      litre.to takes a JSON and returns a litre tree.
+      litre.toLitre takes a JSON and returns a litre tree.
 
       The function takes two arguments: a JSON object, which is required, and a litre path, which is optional.
 
       If you pass a litre path as the second argument, all the paths will start with the specified litre path. Example:
-      litre.to ({a: 'b'})        // returns [[['a'], 'b']]
-      litre.to ({a: 'b'}, ['c']) // returns [[['c', 'a'], 'b']]
+      litre.toLitre ({a: 'b'})        // returns [[['a'], 'b']]
+      litre.toLitre ({a: 'b'}, ['c']) // returns [[['c', 'a'], 'b']]
 
       If any of the two inputs is invalid, the function will return false.
 
       If an empty array or object is passed, or the path passed does not match any of the branches contained in the converted JSON, an empty litre tree will be returned (which is represented by an empty array).
 
       Arrays are transformed in two ways: a) the indexes are increased by one; and b) the indexes are transformed into a string. Example:
-      litre.to (['a', 'b', 'c']) // returns [[['1'], 'a'], [['2'], 'b'], [['3'], 'c']].
+      litre.toLitre (['a', 'b', 'c']) // returns [[['1'], 'a'], [['2'], 'b'], [['3'], 'c']].
    */
 
-   litre.to = function litre_to (JSON, path) {
+   litre.toLitre = function litre_toLitre (JSON, path) {
 
       // If the path is undefined, we set it to an empty array.
       if (path === undefined) path = [];
 
-      if (teishi.s (JSON) === false) return false;
-      if (litre.v.path (path)) return false;
+      if (path.length !== 0) {
+      // We allow valid paths and an empty path as well.
+         if (litre.v.path (path) === false) return false;
+      }
+
+      if (teishi.stop ({
+         compare: JSON,
+         to: ['array', 'object'],
+         test: teishi.test.type,
+         multi: 'one_of',
+         label: 'JSON passed to litre.toLitre',
+      })) return false;
 
       var result = dale.do (JSON, function (v, k) {
          // If k is a number, we're dealing with an array. We add 1 to the key and convert it into a string.
@@ -222,16 +321,17 @@ Please refer to README.md to see what this is about.
          }
          else {
             // If the value is complex, we recursively call the function, concatenating the path to the current key.
-            return litre_to (v, path.concat ([k]));
+            return litre.toLitre (v, path.concat ([k]));
          }
       });
 
-      if (result === []) return result;
+      if (result.length === 0) return result;
 
       // If the result is not empty, we now have to unwrap the nested results. This is something I still don't fully understand, hence I can't explain it clearly. Just know that without this, the tree is not flattened and you have arrays of branches instead of just branches inside it.
 
       var output = [];
       dale.do (result, function (v) {
+         if (v.length === 0) return;
          // If the first element of the path is a string, it's a branch, hence we push it.
          if (teishi.type (v [0] [0]) === 'string') {
             output.push (v);
@@ -254,7 +354,7 @@ Please refer to README.md to see what this is about.
       }, {
          compare: teishi.type (second),
          to: teishi.type (first),
-         label: 'Type of arguments'
+         label: 'Type of arguments is inconsistent.'
       }])) return false;
 
       if (dale.stop_on (second, false, function (v, k) {
@@ -280,15 +380,49 @@ Please refer to README.md to see what this is about.
       else return first;
    }
 
-   litre.from = function (tree) {
+   litre.unroot = function (tree) {
+
+      if (litre.v.tree (tree) === false) return false;
+
+      if (tree.length === 0) return [];
+
+      if (litre.v.branch (tree [0]) === false) return false;
+
+      var root = tree [0] [0]
+
+      dale.stop_on (tree, 0, function (v) {
+         dale.stop_on (v [0], false, function (v2, k2) {
+            if (root [k2] !== v2) {
+               root = root.slice (0, k2);
+               return false;
+            }
+         });
+         return root.length;
+      });
+
+      return dale.do (tree, function (v) {
+         v [0] = v [0].slice (0 + root.length, v [0].length);
+         return v;
+      });
+
+   }
+
+   // XXX From tree to JSON
+
+   litre.toJSON = function (tree) {
+
+      if (litre.v.tree (tree) === false) return false;
+
+      if (tree.length === 0) return {};
+
+      tree = litre.unroot (tree);
 
       var output;
 
       if (dale.stop_on (tree, false, function (v, k) {
-
          var branch_output;
 
-         // Since a branch can't be inconsistent with itself, we use dale.do instad of dale.stop_on.
+         // Since a branch can't be inconsistent with itself, we use dale.do instead of dale.stop_on.
          dale.do (v [0], function (v2, k2) {
 
             // We reverse the loop.
@@ -296,11 +430,11 @@ Please refer to README.md to see what this is about.
             v2 = v [0] [k2];
 
             // If the step is a number, we convert it into a number and zeroindex it.
-            if (isNaN (v2) === false) v2 = parseInt (v2) - 1;
+            if (litre.isInteger (v2)) v2 = parseInt (v2) - 1;
 
             if (k2 === v [0].length - 1) {
                // We are at the last step of the path.
-               if (isNaN (v2)) {
+               if (litre.isInteger (v2) === false) {
                   branch_output = {};
                }
                else {
@@ -309,14 +443,9 @@ Please refer to README.md to see what this is about.
                branch_output [v2] = v [1];
             }
             else {
-               if (isNaN (v2)) {
-                  branch_output = {v2: branch_output}
-               }
-               else {
-                  var temp = [];
-                  temp [v2] = branch_output;
-                  branch_output = temp;
-               }
+               var temp = litre.isInteger (v2) ? [] : {};
+               temp [v2] = branch_output;
+               branch_output = temp;
             }
          });
 
@@ -332,9 +461,9 @@ Please refer to README.md to see what this is about.
 
    // *** litre in/out redis ***
 
-   litre.sPath = function (path) {
-      if (litre.v.path (path) === false) return false;
-      return teishi.s (path).slice (0, teishi.s (path).length - 1);
+   litre.sPath = function (epath) {
+      if (litre.v.epath (epath) === false) return false;
+      return teishi.s (epath).slice (0, teishi.s (epath).length - 1);
    }
 
    litre.pPath = function (string) {
@@ -362,7 +491,7 @@ Please refer to README.md to see what this is about.
          to: redis_commands,
          multi: 'one_of',
          label: 'Action passed to litre.redis'
-      })) return false;
+      })) return a.aReturn (aStack, false);
 
       action = action.toLowerCase ();
 
@@ -372,26 +501,29 @@ Please refer to README.md to see what this is about.
       redisClient [action] (Arguments, function (error, replies) {
          if (error) {
             log (error);
-            a.aReturn (aStack, []);
+            a.aReturn (aStack, false);
          }
-         else a.aReturn (aStack, replies !== null ? replies : []);
+         else a.aReturn (aStack, replies);
       });
    }
 
-   litre.log = function (aStack) {
-      log (aStack.last);
-      a.aReturn (aStack, aStack.last);
-   }
-
-   litre.find = function (aStack, path) {
-      a.aCall (aStack, [
-         [litre.redis, 'KEYS', litre.escape (litre.sPath (path)) + '*'],
-      ])
+   litre.find = function (aStack, epath) {
+      if (litre.v.epath (epath) === false) return a.aReturn (aStack, false);
+      a.aCond (aStack, [litre.redis, 'KEYS', litre.escape (litre.sPath (epath)) + '*'], {
+         false: [a.aReturn, false],
+         default: [function (aStack) {
+            a.aReturn (aStack, dale.do (aStack.last, function (v) {
+               return litre.pPath (v);
+            }));
+         }]
+      });
    }
 
    /*
       XXX explain this clearly
       Conflicts are with respect to a new path that has to be inserted.
+
+      This is the same than the consistent branch/tree functions above, for liters.
 
       The problem is to have a path that is both a terminal and a nonterminal. This should never happen.
 
@@ -402,82 +534,187 @@ Please refer to README.md to see what this is about.
    */
 
    litre.find_conflicts = function (aStack, path) {
+      if (litre.v.path (path) === false) return a.aReturn (aStack, false);
 
       a.aCall (aStack, [
-         // Find 1)
-         [a.aFork, dale.do (path, function (v, k) {
-            return [litre.redis, 'ZRANK', 'INDEX', litre.sPath (path.slice (0, k + 1))];
-         })],
+         [a.aStop, false, [
+            [a.aFork, dale.do (path, function (v, k) {
+               return [litre.redis, 'ZRANK', 'INDEX', litre.sPath (path.slice (0, k + 1))];
+            })],
+            [function (aStack) {
+               a.aReturn (aStack, litre.clean (dale.do (aStack.last, function (v, k) {
+                  if (teishi.type (v) === 'number') return path.slice (0, k + 1);
+               })), 'first_result');
+            }],
+            [litre.find, path],
+         ]],
          [function (aStack) {
-            var output = [];
-            dale.do (aStack.last, function (v, k) {
-               if (teishi.type (v) === 'number') output.push (path.slice (0, k + 1));
-            });
-            a.aReturn (aStack, output);
-         }],
-         // Find 2)
-         [function (aStack) {
-            var output = aStack.last;
-            a.aCall (aStack, [
-               [litre.find, path],
-               [function (aStack) {
-                  dale.do (output, function (v, k) {
-                     output [k] = litre.sPath (output [k]);
-                  });
-                  a.aReturn (aStack, output.concat (aStack.last));
-               }]
-            ]);
-         }],
-      ]);
-   }
-
-   litre.in = function (aStack, path, value) {
-      if (litre.v.path (path) === false) return false;
-      if (teishi.type (value) !== 'string') return false;
-
-      // XXX This should be a script so that it behaves as a transaction.
-
-      a.aCall (aStack, [
-         [litre.find_conflicts, path],
-         [function (aStack) {
-            var actions = [];
-            dale.do (aStack.last, function (v) {
-               actions.push ([litre.redis, 'DEL', v]);
-               actions.push ([litre.redis, 'ZREM', 'INDEX', v]);
-            });
-            a.aFork (aStack, actions);
-         }],
-         [litre.redis, 'SET', litre.sPath (path), value],
-         [litre.redis, 'ZADD', 'INDEX', 0, litre.sPath (path)],
-      ]);
-   }
-
-   litre.out = function (aStack, path) {
-      a.aCall (aStack, [
-         [litre.find, path],
-         [function (aStack) {
-            aStack.paths = aStack.last;
-            a.aFork (aStack, dale.do (aStack.last, function (v) {
-               return [litre.redis, 'GET', v];
-            }));
-         }],
-         [function (aStack) {
-            var paths = aStack.paths;
-            delete aStack.paths;
-            a.aReturn (aStack, dale.do (aStack.last, function (v, k) {
-               return [litre.pPath (paths [k]), v]
-            }));
+            var result = aStack.last.concat (aStack.first_result);
+            // We clean up the aStack
+            delete aStack.first_result;
+            a.aReturn (aStack, result);
          }]
       ]);
    }
 
-   a.aCall (undefined, [
-      [litre.redis, 'FLUSHALL'],
-      [litre.in, ['data'], 'v'],
-      [litre.in, ['data', 'cars', '2'], 'v2'],
-      [litre.in, ['data', 'cars', '3'], 'v3'],
-      [litre.out, ['data', 'cars']],
-      [litre.log],
-   ]);
+   litre.delete_one = function (aStack, epath) {
+      if (litre.v.epath (epath) === false) return a.aReturn (aStack, false);
+      a.aCond (aStack, [litre.find, epath], {
+         false: [a.aReturn, false],
+         default: [function (aStack) {
+            // If we don't find anything, we return true.
+            if (aStack.last.length === 0) return a.aReturn (aStack, true);
+
+            a.aCall (aStack, [
+               [function (aStack) {
+                  var actions = [];
+                  dale.do (aStack.last, function (v) {
+                     actions.push ([litre.redis, 'DEL', litre.sPath (v)]);
+                     actions.push ([litre.redis, 'ZREM', 'INDEX', litre.sPath (v)]);
+                  });
+                  a.aFork (aStack, actions);
+               }],
+               [function (aStack) {
+                  a.aReturn (aStack, dale.stop_on (aStack.last, false, function (v, k) {
+                     if (v === false) return false;
+                     else return true;
+                  }));
+               }]
+            ]);
+         }]
+      });
+   }
+
+   litre.delete = function (aStack, paths) {
+      if (litre.v.paths (paths) === false) return a.aReturn (aStack, false);
+
+      // If paths is a single path, we wrap it in an array.
+      if (teishi.type (paths [0]) === 'string' || paths.length === 0) paths = [paths];
+
+      a.aCall (aStack, [
+         [a.aFork, dale.do (paths, function (v) {
+            return [litre.delete_one, v];
+         })],
+         [function (aStack) {
+            var result;
+            dale.do (aStack.last, function (v, k) {
+               if (k === 0) result = v;
+               else result = result && v;
+            });
+            a.aReturn (aStack, result);
+         }]
+      ]);
+   }
+   // XXX This should be a script so that it behaves as a transaction.
+   litre.set_one = function (aStack, branch) {
+      if (litre.v.branch (branch) === false) {
+         return a.aReturn (aStack, false);
+      }
+
+      a.aStop (aStack, false, [
+         [litre.find_conflicts, branch [0]],
+         [function (aStack) {
+            // A subtle point: if no conflicts are passed, we receive an empty array. But if we pass an empty array to litre.delete, it will delete ALL keys! So we only execute litre.delete if the array is not empty.
+            if (aStack.last.length > 0) {
+               litre.delete (aStack, aStack.last);
+            }
+            else a.aReturn (aStack, true);
+         }],
+         [litre.redis, 'SET', litre.sPath (branch [0]), branch [1]],
+         [litre.redis, 'ZADD', 'INDEX', 0, litre.sPath (branch [0])],
+         [a.aPick, {
+            false: [a.aReturn, false],
+            default: [a.aReturn, true]
+         }]
+      ]);
+   }
+
+   litre.set = function (aStack, tree) {
+
+      if (litre.v.tree (tree) === false) return a.aReturn (aStack, false);
+
+      // If the tree is a branch, we wrap it in an array to make it a tree.
+      if (teishi.type (tree [0] [0]) === 'string') tree = [tree];
+
+      a.aStop (aStack, false, dale.do (tree, function (v) {
+         return [litre.set_one, v];
+      }).concat ([[a.aPick, {
+         false: [a.aReturn, false],
+         default: [a.aReturn, true]
+      }]]));
+   }
+
+   litre.get_one = function (aStack, epath) {
+      if (litre.v.epath (epath) === false) return a.aReturn (aStack, false);
+      a.aCond (aStack, [litre.find, epath], {
+         false: [a.aReturn, false],
+         default: [function (aStack) {
+            // If we don't find anything, we return an empty array.
+            if (aStack.last.length === 0) return a.aReturn (aStack, []);
+
+            // We store the found paths in aStack.paths.
+            aStack.paths = aStack.last;
+
+            a.aCall (aStack, [
+               [a.aFork, dale.do (aStack.paths, function (v) {
+                  return [litre.redis, 'GET', litre.sPath (v)];
+               })],
+               [function (aStack) {
+                  var output_tree = [];
+                  if (dale.stop_on (aStack.last, false, function (v, k) {
+                     // We return false if any of the values is false.
+                     if (v === false) {
+                        a.aReturn (aStack, false);
+                        return false;
+                     }
+                     if (v !== null) output_tree.push ([aStack.paths [k], v]);
+                     return true;
+                  })) {
+                     delete aStack.paths;
+                     a.aReturn (aStack, output_tree);
+                  }
+               }]
+            ]);
+         }]
+      });
+   }
+
+   litre.get = function (aStack, paths) {
+      if (litre.v.paths (paths) === false) return aReturn (aStack, false);
+      // If paths is a single path, we wrap it in an array.
+      if (teishi.type (paths [0]) === 'string' || paths.length === 0) paths = [paths];
+
+      a.aCall (aStack, [
+         [a.aFork, dale.do (paths, function (v) {
+            return [litre.get_one, v];
+         })],
+         // Semi-copy pasted from litre.get_one
+         [function (aStack) {
+            var output_tree = [];
+            if (dale.stop_on (aStack.last, false, function (v, k) {
+               // We return false if any of the values is false.
+               if (v === false) {
+                  a.aReturn (aStack, false);
+                  return false;
+               }
+               dale.do (v, function (v2) {
+                  output_tree.push (v2);
+               });
+               return true;
+            })) {
+               a.aReturn (aStack, output_tree);
+            }
+         }]
+      ]);
+   }
+
+   litre.getJSON = function (aStack, paths) {
+      a.aCall (aStack, [
+         [litre.get, paths],
+         [function (aStack) {
+            a.aReturn (aStack, litre.toJSON (aStack.last));
+         }]
+      ]);
+   }
 
 }).call (this);
