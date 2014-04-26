@@ -1,5 +1,5 @@
 /*
-litre - v0.2.0
+litre - v0.2.1
 
 Written by Federico Pereiro (fpereiro@gmail.com) and released into the public domain.
 
@@ -24,7 +24,7 @@ Please refer to README.md to see what this is about.
          log ('redis error:', error)});
 
    // Require astack, dale and teishi.
-   var a = require ('astack');
+   var a = require ('../astack/astack.js');
    var dale = require ('dale');
    var teishi = require ('teishi');
 
@@ -203,6 +203,8 @@ Please refer to README.md to see what this is about.
       litre.pickJSON (a, [2, 'b']) -> returns 'c'
    */
    litre.pickJSON = function (object, path) {
+      // In this function we are going to use a destructive operation on the path argument (shift), so we need to copy it. Did you know that when you pass an array or an object to a javascript function, you pass a reference to that array or object (and not a copy)? I didn't ; ).
+      var path = teishi.p (teishi.s (path));
       if (litre.v.path (path) === false) return false;
       if (teishi.stop ({
          compare: object,
@@ -212,16 +214,15 @@ Please refer to README.md to see what this is about.
          label: 'object passed to litre.pickJSON'
       })) return false;
 
+      // We need to convert array steps to zeroindexed numbers. We do this every time, on its first element. If we did it to the whole path, litre.fromPath would complain that the path is not a valid path, and I don't want to pass a third parameter which indicates whether the function has already been called before or not.
+      path [0] = litre.fromPath ([path [0]]) [0];
       if (path.length === 1) {
          return object [path [0]];
       }
       else {
          var step = path.shift ();
-         // Undefined can only be a terminal value, but since we have more than one step left in the path, what we're looking for in the object doesn't exist.
-         if (object [step] === undefined) {
-            return teishi.e (['step', step, 'not found in object', object]);
-         }
-         return litre.pickJSON (object [step], path);
+         if (object [step] === undefined) return undefined;
+         else return litre.pickJSON (object [step], path);
       }
    }
 
@@ -388,7 +389,10 @@ Please refer to README.md to see what this is about.
 
       if (litre.v.branch (tree [0]) === false) return false;
 
-      var root = tree [0] [0]
+      // In this function we are going to use destructive operations on the tree argument, so we need to copy it. Did you know that when you pass an array or an object to a javascript function, you pass a reference to that array or object (and not a copy)? I didn't!
+      var tree = teishi.p (teishi.s (tree));
+
+      var root = tree [0] [0];
 
       dale.stop_on (tree, 0, function (v) {
          dale.stop_on (v [0], false, function (v2, k2) {
@@ -409,17 +413,15 @@ Please refer to README.md to see what this is about.
 
    // XXX From tree to JSON
 
-   litre.toJSON = function (tree) {
+   litre.toJSON = function (tree, absolute) {
 
       if (litre.v.tree (tree) === false) return false;
 
       if (tree.length === 0) return {};
 
-      tree = litre.unroot (tree);
-
       var output;
 
-      if (dale.stop_on (tree, false, function (v, k) {
+      if (dale.stop_on (absolute ? tree : litre.unroot (tree), false, function (v, k) {
          var branch_output;
 
          // Since a branch can't be inconsistent with itself, we use dale.do instead of dale.stop_on.
@@ -708,11 +710,11 @@ Please refer to README.md to see what this is about.
       ]);
    }
 
-   litre.getJSON = function (aStack, paths) {
+   litre.getJSON = function (aStack, paths, absolute) {
       a.aCall (aStack, [
          [litre.get, paths],
          [function (aStack) {
-            a.aReturn (aStack, litre.toJSON (aStack.last));
+            a.aReturn (aStack, litre.toJSON (aStack.last, absolute));
          }]
       ]);
    }

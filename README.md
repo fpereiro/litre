@@ -79,7 +79,7 @@ turns into:
 
 ```litre.pick```: takes a tree and a path. returns tree with all the elements that match the path. by matching, we mean that every branch contains in its path the first n elements of the path passed, where n is the length of the path passed.
 
-```litre.pickJSON```: takes a JSON and a path. returns a JSON with all the elements that match the path. by matching, we mean that every branch contains in its path the first n elements of the path passed, where n is the length of the path passed.
+```litre.pickJSON```: takes a JSON and a path. returns a JSON with all the elements that match the path. by matching, we mean that every branch contains in its path the first n elements of the path passed, where n is the length of the path passed. if it's not found, returns undefined.
 
 
 `litre.branch_consistent_in_tree`, takes tree and branch, and check that the branch can belong to that tree. returns true/false.
@@ -108,7 +108,7 @@ terminal values are stringified by adding an empty string to them.
 `litre.toJSON` receives a tree. If it is invalid, it returns false. It dezeroindexes paths that are stringified integers. This means that if you are using JSONs that have numeric keys, you have to make all of them integers (ie: amenable to array conversion), otherwise you will get an error. Procedure wise, this function generates an object per each branch (going from the last step to the first) and then litre.combines each object into an accumulator object.
 if the tree is empty, an empty object is returned.
 notice that terminal values are not destringified, so if you passed a number to litre.toLitre and then applied litre.toJSON, you won't get the same object.
-explain unrooting!!!
+explain unrooting!!! and absolute option.
 
 ### return and aReturn
 
