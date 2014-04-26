@@ -24,7 +24,7 @@ Please refer to README.md to see what this is about.
          log ('redis error:', error)});
 
    // Require astack, dale and teishi.
-   var a = require ('../astack/astack.js');
+   var a = require ('astack');
    var dale = require ('dale');
    var teishi = require ('teishi');
 
