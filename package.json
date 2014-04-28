@@ -1,6 +1,6 @@
 {
    "name": "litre",
-   "version": "0.2.1",
+   "version": "0.2.2",
    "description": "Tool for storing and retrieving JSONs in redis.",
    "dependencies": {
       "astack": "1.1.5",

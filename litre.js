@@ -387,6 +387,8 @@ Please refer to README.md to see what this is about.
 
       if (tree.length === 0) return [];
 
+      if (tree.length === 1) return tree;
+
       if (litre.v.branch (tree [0]) === false) return false;
 
       // In this function we are going to use destructive operations on the tree argument, so we need to copy it. Did you know that when you pass an array or an object to a javascript function, you pass a reference to that array or object (and not a copy)? I didn't!
@@ -682,7 +684,7 @@ Please refer to README.md to see what this is about.
    }
 
    litre.get = function (aStack, paths) {
-      if (litre.v.paths (paths) === false) return aReturn (aStack, false);
+      if (litre.v.paths (paths) === false) return a.aReturn (aStack, false);
       // If paths is a single path, we wrap it in an array.
       if (teishi.type (paths [0]) === 'string' || paths.length === 0) paths = [paths];
 
