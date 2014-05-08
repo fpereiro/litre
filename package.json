@@ -3,7 +3,7 @@
    "version": "0.2.2",
    "description": "Tool for storing and retrieving JSONs in redis.",
    "dependencies": {
-      "astack": "1.1.5",
+      "astack": "1.1.6",
       "dale": "1.0.7",
       "hiredis": "0.1.16",
       "redis": "0.10.1",

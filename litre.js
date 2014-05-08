@@ -1,5 +1,5 @@
 /*
-litre - v0.2.2
+litre - v0.2.3
 
 Written by Federico Pereiro (fpereiro@gmail.com) and released into the public domain.
 
