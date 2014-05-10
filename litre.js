@@ -1,5 +1,5 @@
 /*
-litre - v0.2.3
+litre - v0.2.4
 
 Written by Federico Pereiro (fpereiro@gmail.com) and released into the public domain.
 
@@ -317,14 +317,21 @@ Please refer to README.md to see what this is about.
          // If k is a number, we're dealing with an array. We add 1 to the key and convert it into a string.
          teishi.type (k) === 'number' ? k = k + 1 + '' : k = k;
          if (teishi.type (v) !== 'array' && teishi.type (v) !== 'object') {
-            // If the value is not complex (ie: it doesn't contain other values inside), we convert the value to a string and return the branch.
-            return [path.concat ([k]), v + ''];
+            // If the value is not complex (ie: it doesn't contain other values inside), and it is neither undefined nor null, we convert the value to a string and return the branch.
+            if (v !== undefined && v !== null) {
+               return [path.concat ([k]), v + ''];
+            }
+            // If not, we return undefined.
+            else return undefined;
          }
          else {
             // If the value is complex, we recursively call the function, concatenating the path to the current key.
             return litre.toLitre (v, path.concat ([k]));
          }
       });
+
+      // We clean undefined values.
+      result = litre.clean (result);
 
       if (result.length === 0) return result;
 
@@ -636,6 +643,9 @@ Please refer to README.md to see what this is about.
    litre.set = function (aStack, tree) {
 
       if (litre.v.tree (tree) === false) return a.aReturn (aStack, false);
+
+      // There's nothing to set, so we return true.
+      if (tree.length === 0) return a.aReturn (aStack, true);
 
       // If the tree is a branch, we wrap it in an array to make it a tree.
       if (teishi.type (tree [0] [0]) === 'string') tree = [tree];
